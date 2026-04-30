@@ -6,9 +6,78 @@
 
 ## Start here
 
-Click **Deploy to Cloudflare** above to bootstrap the seed into your Cloudflare account.
+### 1. Deploy to your Cloudflare account
 
-Or run the seed locally:
+Click **Deploy to Cloudflare** above and finish the deploy flow.
+
+When it completes, copy your Worker URL. It will look like:
+
+```txt
+https://mcpu.<your-subdomain>.workers.dev
+```
+
+If you deploy with `workers_dev = false`, use the route or custom domain you configured instead.
+
+### 2. Add secrets for the Artifact loop
+
+`mcpu` needs an Artifacts Git remote and token before `repo.commit` can push source to Cloudflare Artifacts.
+
+Set these Worker secrets/vars in your account:
+
+```txt
+ARTIFACTS_REMOTE=https://<account-id>.artifacts.cloudflare.net/git/default/mcpu.git
+ARTIFACTS_TOKEN=art_v1_...
+ARTIFACTS_BRANCH=main
+MCPU_SCRIPT_NAME=mcpu
+CLOUDFLARE_ACCOUNT_ID=<account-id>
+CLOUDFLARE_API_TOKEN=<token that can edit Workers>
+```
+
+GitHub is not used after bootstrap.
+
+### 3. Add mcpu to your MCP config
+
+Use your deployed Worker URL plus `/mcp`.
+
+```json
+{
+  "mcpServers": {
+    "mcpu": {
+      "url": "https://mcpu.<your-subdomain>.workers.dev/mcp"
+    }
+  }
+}
+```
+
+For a custom domain:
+
+```json
+{
+  "mcpServers": {
+    "mcpu": {
+      "url": "https://mcpu.example.com/mcp"
+    }
+  }
+}
+```
+
+### 4. Try it
+
+Ask your agent:
+
+```txt
+Connect to mcpu. Run repo.status, list files, read worker.js, change the homepage text, show the diff, commit it, and deploy it.
+```
+
+Expected loop:
+
+```txt
+repo.write -> repo.diff -> repo.commit -> Cloudflare Artifacts -> repo.deploy -> Cloudflare Workers
+```
+
+## Local development
+
+Run the seed locally:
 
 ```sh
 npm install
@@ -19,22 +88,20 @@ npm run dev -- --port 8799
 Then connect to:
 
 ```txt
-POST http://localhost:8799/mcp
+http://localhost:8799/mcp
 ```
 
-## How-to
+Local MCP config:
 
-### Edit the repo
-
-Call `repo.write` with a path and contents. The edit updates the mutable draft.
-
-### Commit an Artifact
-
-Call `repo.commit` with a message. The draft becomes an immutable Artifact commit.
-
-### Deploy an Artifact
-
-Call `repo.deploy`. The deployer deploys the latest committed Artifact to Cloudflare Workers. GitHub is not in the live loop.
+```json
+{
+  "mcpServers": {
+    "mcpu-local": {
+      "url": "http://localhost:8799/mcp"
+    }
+  }
+}
+```
 
 ## Reference
 
@@ -52,7 +119,7 @@ Tools:
 State:
 
 - `draft` - mutable working tree
-- `artifact` - immutable source commit
+- `artifact` - immutable source commit in Cloudflare Artifacts
 - `deployment` - Worker version deployed from an Artifact
 
 ## Explanation
