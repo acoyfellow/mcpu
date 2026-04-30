@@ -1,12 +1,16 @@
 # mcpu
 
+[![Deploy to Cloudflare](./public/deploy.svg)](https://deploy.workers.cloudflare.com/?url=https://github.com/acoyfellow/mcpu)
+
 Tiny, smol, permanent `0.0.1`.
 
 `mcpu` is an Artifact-native repo controlled over MCP. GitHub is only the bootstrap seed. After first deploy, source commits live in Cloudflare Artifacts and deploy back to Cloudflare Workers.
 
 ## Start here
 
-Run the seed locally:
+Click **Deploy to Cloudflare** above to bootstrap the seed into your Cloudflare account.
+
+Or run the seed locally:
 
 ```sh
 npm install
