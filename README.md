@@ -18,7 +18,11 @@ https://mcpu.<your-subdomain>.workers.dev
 
 If you deploy with `workers_dev = false`, use the route or custom domain you configured instead.
 
-### 2. Add secrets for the Artifact loop
+### 2. Protect `/mcp`
+
+Before adding deploy-capable secrets, protect `/mcp` with Cloudflare Access or an equivalent auth layer. Do not expose a public MCP endpoint with `ARTIFACTS_TOKEN` or `CLOUDFLARE_API_TOKEN` configured.
+
+### 3. Add secrets for the Artifact loop
 
 `mcpu` needs an Artifacts Git remote and token before `repo.commit` can push source to Cloudflare Artifacts.
 
@@ -35,7 +39,7 @@ CLOUDFLARE_API_TOKEN=<token that can edit Workers>
 
 GitHub is not used after bootstrap.
 
-### 3. Add mcpu to your MCP config
+### 4. Add mcpu to your MCP config
 
 Use your deployed Worker URL plus `/mcp`.
 
@@ -61,7 +65,7 @@ For a custom domain:
 }
 ```
 
-### 4. Try it
+### 5. Try it
 
 Ask your agent:
 
