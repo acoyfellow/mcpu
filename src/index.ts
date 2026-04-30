@@ -1,9 +1,8 @@
 import { createTwoFilesPatch } from "diff";
-import { createArtifactCommit, getHistory, latestCommit, pushToArtifactsRepo } from "./artifacts";
+import { artifactConfig, createArtifactCommit, readArtifactsHead, type ArtifactCommit } from "./artifacts";
 import { deployArtifactCommit } from "./deploy";
 
 export interface Env {
-  MCPU_KV: KVNamespace;
   MCPU_PACK?: string;
   ARTIFACTS_REMOTE?: string;
   ARTIFACTS_TOKEN?: string;
@@ -22,15 +21,19 @@ const seed: Files = {
   "worker.js": `export default {\n  fetch() {\n    return new Response("mcpu 0.0.1 - artifact-native\\n", { headers: { "content-type": "text/plain; charset=utf-8" } });\n  }\n};\n`,
 };
 
+let draft: Files | null = null;
+let deployedArtifact: string | null = null;
+let lastCommit: ArtifactCommit | null = null;
 const toolNames = ["repo.status", "repo.ls", "repo.read", "repo.write", "repo.diff", "repo.commit", "repo.deploy", "repo.history"];
 
-export async function getFiles(env: Env): Promise<Files> {
-  const raw = await env.MCPU_KV.get("draft");
-  return raw ? JSON.parse(raw) : { ...seed };
+async function head(env: Env) {
+  if (!env.ARTIFACTS_REMOTE || !env.ARTIFACTS_TOKEN) return lastCommit;
+  return (await readArtifactsHead(artifactConfig(env))) ?? lastCommit;
 }
 
-export async function putFiles(env: Env, files: Files) {
-  await env.MCPU_KV.put("draft", JSON.stringify(files));
+async function getFiles(env: Env): Promise<Files> {
+  if (draft) return draft;
+  return (await head(env))?.files ?? { ...seed };
 }
 
 function json(body: unknown, status = 200) {
@@ -51,9 +54,9 @@ function diffFiles(base: Files, next: Files) {
 }
 
 export async function handleTool(env: Env, name: string, args: any) {
+  const current = await head(env);
   const files = await getFiles(env);
-  const head = await latestCommit(env.MCPU_KV);
-  if (name === "repo.status") return { pack: env.MCPU_PACK ?? "mcpu", version: "0.0.1", storage: "cloudflare-artifacts", bootstrap: "github-only", draftFiles: Object.keys(files).length, currentArtifact: head?.id ?? null, deployedArtifact: (await env.MCPU_KV.get("deployedArtifact")) ?? null };
+  if (name === "repo.status") return { pack: env.MCPU_PACK ?? "mcpu", version: "0.0.1", storage: "cloudflare-artifacts", bootstrap: "github-only", draftDirty: draft !== null, currentArtifact: current?.id ?? null, deployedArtifact };
   if (name === "repo.ls") return { files: Object.keys(files).sort() };
   if (name === "repo.read") {
     if (!args?.path || !(args.path in files)) throw new Error("file not found");
@@ -61,27 +64,25 @@ export async function handleTool(env: Env, name: string, args: any) {
   }
   if (name === "repo.write") {
     if (!args?.path || typeof args.contents !== "string") throw new Error("path and contents required");
-    files[args.path] = args.contents;
-    await putFiles(env, files);
+    draft = { ...files, [args.path]: args.contents };
     return { ok: true, path: args.path };
   }
-  if (name === "repo.diff") return { diff: diffFiles(head?.files ?? seed, files) };
+  if (name === "repo.diff") return { diff: diffFiles(current?.files ?? seed, files) };
   if (name === "repo.commit") {
-    const commit = await createArtifactCommit(env.MCPU_KV, args?.message || "update mcpu artifact", files);
-    let pushed = null;
-    if (env.ARTIFACTS_REMOTE && env.ARTIFACTS_TOKEN) {
-      pushed = await pushToArtifactsRepo(commit, { remote: env.ARTIFACTS_REMOTE, token: env.ARTIFACTS_TOKEN, branch: env.ARTIFACTS_BRANCH });
-    }
-    return { ok: true, artifact: { id: commit.id, parent: commit.parent, message: commit.message, at: commit.at, pushed } };
+    const cfg = artifactConfig(env);
+    const commit = await createArtifactCommit(cfg, args?.message || "update mcpu artifact", files);
+    lastCommit = commit;
+    draft = null;
+    return { ok: true, artifact: { id: commit.id, parent: commit.parent, message: commit.message, at: commit.at, pushed: commit.pushed } };
   }
   if (name === "repo.deploy") {
-    const commit = head;
+    const commit = current ?? lastCommit;
     if (!commit) throw new Error("nothing committed");
     const deployment = await deployArtifactCommit(env, commit);
-    await env.MCPU_KV.put("deployedArtifact", commit.id);
+    deployedArtifact = commit.id;
     return deployment;
   }
-  if (name === "repo.history") return { artifacts: (await getHistory(env.MCPU_KV)).map(({ id, parent, message, at }) => ({ id, parent, message, at })) };
+  if (name === "repo.history") return { artifacts: current ? [{ id: current.id, parent: current.parent, message: current.message, at: current.at, pushed: current.pushed }] : [] };
   throw new Error(`unknown tool: ${name}`);
 }
 

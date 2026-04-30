@@ -4,12 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-04-30",
   "workers_dev": false,
-  "kv_namespaces": [
-    {
-      "binding": "MCPU_KV",
-      "id": "aea322d44a6d4b7d9262e3208146052c"
-    }
-  ],
   "vars": {
     "MCPU_PACK": "mcpu",
     "ARTIFACTS_BRANCH": "main",
