@@ -1,6 +1,6 @@
 # mcpu
 
-[![Deploy to Cloudflare](./public/deploy.svg)](https://deploy.workers.cloudflare.com/?url=https://github.com/acoyfellow/mcpu)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Facoyfellow%2Fmcpu)
 
 Tiny, smol, permanent `0.0.1`.
 
