@@ -9,4 +9,4 @@ Before setting any of these secrets, protect the Worker with Cloudflare Access o
 
 GitHub is only the bootstrap seed. Runtime source changes should happen through Cloudflare Artifacts.
 
-Report security issues privately to jcoeyman@cloudflare.com.
+Report security issues privately through GitHub Security Advisories.
