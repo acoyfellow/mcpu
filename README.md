@@ -128,9 +128,3 @@ GitHub gets you to zero. Cloudflare owns everything after.
 
 The demo is intentionally tiny: a live MCP edits a Cloudflare Artifacts repo, commits it, and deploys that Artifact as the next version of itself.
 
-## Relationship to nearby projects
-
-- **Cloudflare Artifacts** stores the repo. `mcpu` does not replace Artifacts; it gives one Artifacts repo an MCP control surface.
-- **a0** applies the broader Artifacts + gates + promotion pattern to agent skills.
-- **artifact-spec** explores eval-backed artifact formats and promotion rules.
-- **mcpu** stays smaller: connect to one Artifacts repo, edit it over MCP, commit, deploy, rollback.
