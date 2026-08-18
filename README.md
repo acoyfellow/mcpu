@@ -35,9 +35,10 @@ ARTIFACTS_BRANCH=main
 MCPU_SCRIPT_NAME=mcpu
 CLOUDFLARE_ACCOUNT_ID=<account-id>
 CLOUDFLARE_API_TOKEN=<token that can edit Workers>
+IMPRINT_DIR=<checkout that holds .imprint/releases>
 ```
 
-GitHub is not used after bootstrap.
+`repo.deploy` reads `IMPRINT_DIR/.imprint/releases/<commit>.json` and refuses unless `proof.verified` is true. Missing file or `verified: false` is a failed deploy. GitHub is not used after bootstrap.
 
 ### 4. Add mcpu to your MCP config
 
@@ -76,7 +77,8 @@ Connect to mcpu. Run repo.status, list files, read worker.js, change the homepag
 Expected loop:
 
 ```txt
-repo.write -> repo.diff -> repo.commit -> Cloudflare Artifacts -> repo.deploy -> Cloudflare Workers
+repo.write, repo.diff, repo.commit (Artifacts),
+then repo.deploy only if .imprint/releases/<commit>.json has proof.verified true
 ```
 
 ## Local development

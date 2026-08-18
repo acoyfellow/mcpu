@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createTwoFilesPatch } from "diff";
 import { artifactConfig, createArtifactCommit, readArtifactsHead, type ArtifactCommit } from "./artifacts";
 import { deployArtifactCommit } from "./deploy";
@@ -10,6 +12,7 @@ export interface Env {
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
   MCPU_SCRIPT_NAME?: string;
+  IMPRINT_DIR?: string;
 }
 
 type Files = Record<string, string>;
@@ -24,6 +27,10 @@ const seed: Files = {
 let draft: Files | null = null;
 let deployedArtifact: string | null = null;
 let lastCommit: ArtifactCommit | null = null;
+
+export function rememberCommit(commit: ArtifactCommit | null) {
+  lastCommit = commit;
+}
 const toolNames = ["repo.status", "repo.ls", "repo.read", "repo.write", "repo.diff", "repo.commit", "repo.deploy", "repo.history"];
 
 async function head(env: Env) {
@@ -78,12 +85,26 @@ export async function handleTool(env: Env, name: string, args: any) {
   if (name === "repo.deploy") {
     const commit = current ?? lastCommit;
     if (!commit) throw new Error("nothing committed");
+    await requireVerifiedImprint(env, commit.id);
     const deployment = await deployArtifactCommit(env, commit);
     deployedArtifact = commit.id;
     return deployment;
   }
   if (name === "repo.history") return { artifacts: current ? [{ id: current.id, parent: current.parent, message: current.message, at: current.at, pushed: current.pushed }] : [] };
   throw new Error(`unknown tool: ${name}`);
+}
+
+export async function requireVerifiedImprint(env: Env, commitId: string) {
+  const directory = env.IMPRINT_DIR;
+  if (!directory) throw new Error("IMPRINT_DIR is required so deploy can check the imprint release");
+  let raw: string;
+  try {
+    raw = await readFile(join(directory, ".imprint", "releases", `${commitId}.json`), "utf8");
+  } catch {
+    throw new Error(`no imprint release for ${commitId}`);
+  }
+  const release = JSON.parse(raw) as { proof?: { verified?: boolean } };
+  if (!release.proof?.verified) throw new Error(`imprint release for ${commitId} is not verified`);
 }
 
 async function handleMcp(request: Request, env: Env) {
