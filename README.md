@@ -132,5 +132,11 @@ State:
 
 GitHub gets you to zero. Cloudflare owns everything after.
 
-The demo is intentionally tiny: a live MCP edits a Cloudflare Artifacts repo, commits it, and deploys that Artifact as the next version of itself.
+`repo.commit` writes a git commit and pushes it to Artifacts. In a Worker it
+uses an in-memory filesystem. In Node it uses a temp directory. It does not
+need a browser.
+
+`rememberCommit` exists only for tests. Do not use it in production.
+
+Deploy still requires `IMPRINT_DIR` and a verified release for that commit.
 

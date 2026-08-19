@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createArtifactCommit } from "../src/artifacts";
 import { handleTool, rememberCommit, requireVerifiedImprint, type Env } from "../src/index";
 
 const env = (): Env => ({ MCPU_PACK: "mcpu" });
@@ -56,5 +57,16 @@ describe("mcpu", () => {
     expect(out.uploaded).toBe(false);
     expect(out.commit).toBe("slot-good");
     rememberCommit(null);
+  });
+
+  it("creates a git commit in Node without indexedDB", async () => {
+    const commit = await createArtifactCommit(
+      { remote: "file://unused", token: "unused", branch: "main" },
+      "node commit",
+      { "worker.js": "export default {};\n" },
+    );
+    expect(commit.id).toMatch(/^[0-9a-f]{40}$/);
+    expect(commit.files["worker.js"]).toContain("export default");
+    expect(commit.pushed).toBeNull();
   });
 });
