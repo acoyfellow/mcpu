@@ -4,7 +4,7 @@ import { createTwoFilesPatch } from "diff";
 import { artifactConfig, createArtifactCommit, detectGitHost, readArtifactsHead, type ArtifactCommit } from "./artifacts";
 import { deployArtifactCommit } from "./deploy";
 import { faceHtml } from "./face";
-import { assertGrant, createGrant, GrantDenied } from "./grant";
+import { assertGrant, createGrant, durableGrantStore, GrantDenied, memoryGrantStore, type GrantStore } from "./grant";
 
 export interface Env {
   MCPU_PACK?: string;
@@ -18,6 +18,8 @@ export interface Env {
   CLOUDFLARE_API_TOKEN?: string;
   MCPU_SCRIPT_NAME?: string;
   IMPRINT_DIR?: string;
+  GRANT?: { idFromName(name: string): unknown; get(id: unknown): { fetch(input: Request): Promise<Response> } };
+  GRANT_STORE?: GrantStore;
 }
 
 type Files = Record<string, string>;
@@ -69,14 +71,21 @@ function diffFiles(base: Files, next: Files) {
   return paths.map((path) => createTwoFilesPatch(path, path, base[path] ?? "", next[path] ?? "", "artifact", "draft")).join("\n").trim();
 }
 
+function grantStore(env: Env): GrantStore {
+  if (env.GRANT_STORE) return env.GRANT_STORE;
+  if (env.GRANT) return durableGrantStore(env.GRANT.get(env.GRANT.idFromName("grants")));
+  return memoryGrantStore;
+}
+
 export async function handleTool(env: Env, name: string, args: any) {
+  const store = grantStore(env);
   if (name === "grant.create") {
     if (!Array.isArray(args?.verbs) || !Array.isArray(args?.allow)) throw new Error("verbs and allow required");
-    return createGrant({ verbs: args.verbs, allow: args.allow, deny: args.deny, ttlMs: args.ttlMs });
+    return createGrant({ verbs: args.verbs, allow: args.allow, deny: args.deny, ttlMs: args.ttlMs }, store);
   }
   const path = typeof args?.path === "string" ? args.path : undefined;
   const verb = name.replace(/^repo\./, "");
-  assertGrant(args?.grant, verb, path);
+  await assertGrant(args?.grant, verb, path, store);
   const current = await head(env);
   const files = await getFiles(env);
   if (name === "repo.status") {
@@ -158,3 +167,5 @@ export default {
     return new Response("not found", { status: 404 });
   },
 };
+
+export { GrantDO } from "./grant";

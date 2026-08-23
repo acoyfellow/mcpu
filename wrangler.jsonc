@@ -4,6 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-04-30",
   "workers_dev": false,
+  "durable_objects": {
+    "bindings": [{ "name": "GRANT", "class_name": "GrantDO" }]
+  },
+  "migrations": [{ "tag": "v1-grant", "new_sqlite_classes": ["GrantDO"] }],
   "vars": {
     "MCPU_PACK": "mcpu",
     "ARTIFACTS_BRANCH": "main",

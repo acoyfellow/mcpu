@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createArtifactCommit, detectGitHost, gitAuth } from "../src/artifacts";
 import worker, { handleTool, rememberCommit, requireVerifiedImprint, type Env } from "../src/index";
-import { GrantDenied } from "../src/grant";
+import { forgetAllGrants, GrantDenied, GrantDO, MemoryDurableStorage, durableGrantStore } from "../src/grant";
 
 const env = (): Env => ({ MCPU_PACK: "mcpu" });
 
@@ -135,6 +135,25 @@ describe("mcpu", () => {
     await expect(
       handleTool(e, "repo.write", { grant: grant.id, path: "README.md", contents: "no" }),
     ).rejects.toBeInstanceOf(GrantDenied);
+    await expect(
+      handleTool(e, "repo.write", { grant: grant.id, path: "README.md", contents: "no" }),
+    ).rejects.toThrow(/403 README.md/);
+  });
+
+  it("Durable Object grant survives after the Map is cleared", async () => {
+    const durable = new GrantDO({ storage: new MemoryDurableStorage() });
+    const e: Env = { MCPU_PACK: "mcpu", GRANT_STORE: durableGrantStore(durable) };
+    const grant: any = await handleTool(e, "grant.create", {
+      verbs: ["write", "read"],
+      allow: ["docs/**"],
+    });
+    forgetAllGrants();
+    await expect(
+      handleTool({ MCPU_PACK: "mcpu" }, "repo.write", { grant: grant.id, path: "docs/note.md", contents: "ok" }),
+    ).rejects.toBeInstanceOf(GrantDenied);
+    await expect(
+      handleTool(e, "repo.write", { grant: grant.id, path: "docs/note.md", contents: "ok" }),
+    ).resolves.toEqual({ ok: true, path: "docs/note.md" });
     await expect(
       handleTool(e, "repo.write", { grant: grant.id, path: "README.md", contents: "no" }),
     ).rejects.toThrow(/403 README.md/);
