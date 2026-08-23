@@ -51,7 +51,7 @@ export function artifactConfig(env: {
 type Workspace = { fs: any; dir: string; cleanup: () => Promise<void> };
 
 async function workspace(): Promise<Workspace> {
-  if (typeof indexedDB === "undefined") {
+  if (typeof (globalThis as { indexedDB?: unknown }).indexedDB === "undefined") {
     const fs = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
