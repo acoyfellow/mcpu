@@ -4,6 +4,7 @@ import { createTwoFilesPatch } from "diff";
 import { artifactConfig, createArtifactCommit, detectGitHost, readArtifactsHead, type ArtifactCommit } from "./artifacts";
 import { deployArtifactCommit } from "./deploy";
 import { faceHtml } from "./face";
+import { assertGrant, createGrant, GrantDenied } from "./grant";
 
 export interface Env {
   MCPU_PACK?: string;
@@ -35,7 +36,7 @@ let lastCommit: ArtifactCommit | null = null;
 export function rememberCommit(commit: ArtifactCommit | null) {
   lastCommit = commit;
 }
-const toolNames = ["repo.status", "repo.ls", "repo.read", "repo.write", "repo.diff", "repo.commit", "repo.deploy", "repo.history"];
+const toolNames = ["repo.status", "repo.ls", "repo.read", "repo.write", "repo.diff", "repo.commit", "repo.deploy", "repo.history", "grant.create"];
 
 function hasRemote(env: Env) {
   return Boolean((env.GIT_REMOTE ?? env.ARTIFACTS_REMOTE) && (env.GIT_TOKEN ?? env.ARTIFACTS_TOKEN));
@@ -69,6 +70,13 @@ function diffFiles(base: Files, next: Files) {
 }
 
 export async function handleTool(env: Env, name: string, args: any) {
+  if (name === "grant.create") {
+    if (!Array.isArray(args?.verbs) || !Array.isArray(args?.allow)) throw new Error("verbs and allow required");
+    return createGrant({ verbs: args.verbs, allow: args.allow, deny: args.deny, ttlMs: args.ttlMs });
+  }
+  const path = typeof args?.path === "string" ? args.path : undefined;
+  const verb = name.replace(/^repo\./, "");
+  assertGrant(args?.grant, verb, path);
   const current = await head(env);
   const files = await getFiles(env);
   if (name === "repo.status") {
@@ -126,7 +134,10 @@ async function handleMcp(request: Request, env: Env) {
     try {
       const out = await handleTool(env, msg.params?.name, msg.params?.arguments || {});
       return rpc(msg.id, { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] });
-    } catch (e) { return rpcError(msg.id, -32000, e instanceof Error ? e.message : String(e)); }
+    } catch (e) {
+      const code = e instanceof GrantDenied ? 403 : -32000;
+      return rpcError(msg.id, code, e instanceof Error ? e.message : String(e));
+    }
   }
   return rpcError(msg.id, -32601, "method not found");
 }

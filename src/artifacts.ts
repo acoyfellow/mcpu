@@ -1,5 +1,6 @@
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
+import { createMemoryFs } from "./memory-fs";
 
 export type ArtifactCommit = {
   id: string;
@@ -51,15 +52,7 @@ export function artifactConfig(env: {
 type Workspace = { fs: any; dir: string; cleanup: () => Promise<void> };
 
 async function workspace(): Promise<Workspace> {
-  if (typeof (globalThis as { indexedDB?: unknown }).indexedDB === "undefined") {
-    const fs = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const dir = await fs.mkdtemp(join(tmpdir(), "mcpu-"));
-    return { fs, dir, cleanup: () => fs.rm(dir, { recursive: true, force: true }) };
-  }
-  const LightningFS = (await import("@isomorphic-git/lightning-fs")).default;
-  return { fs: new LightningFS(`mcpu-${crypto.randomUUID()}`).promises, dir: "/repo", cleanup: async () => undefined };
+  return { fs: createMemoryFs().promises, dir: "/repo", cleanup: async () => undefined };
 }
 
 async function writeTree(fs: any, dir: string, files: Record<string, string>) {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createArtifactCommit, detectGitHost, gitAuth } from "../src/artifacts";
 import worker, { handleTool, rememberCommit, requireVerifiedImprint, type Env } from "../src/index";
+import { GrantDenied } from "../src/grant";
 
 const env = (): Env => ({ MCPU_PACK: "mcpu" });
 
@@ -70,6 +71,24 @@ describe("mcpu", () => {
     expect(commit.pushed).toBeNull();
   });
 
+  it("creates a git commit on a Worker-shaped memory workspace", async () => {
+    const idb = (globalThis as { indexedDB?: unknown }).indexedDB;
+    Reflect.deleteProperty(globalThis, "indexedDB");
+    try {
+      const planted = "leak-me";
+      const commit = await createArtifactCommit(
+        { remote: "file://unused", token: planted, branch: "main" },
+        "worker commit",
+        { "worker.js": "export default { fetch() { return new Response(\"ok\"); } };\n" },
+      );
+      expect(commit.id).toMatch(/^[0-9a-f]{40}$/);
+      expect(JSON.stringify(commit)).not.toContain(planted);
+      expect(commit.pushed).toBeNull();
+    } finally {
+      if (idb !== undefined) (globalThis as { indexedDB?: unknown }).indexedDB = idb;
+    }
+  });
+
   it("treats github, gitlab, and artifacts remotes as peers", () => {
     expect(detectGitHost("https://github.com/acoyfellow/mcpu.git")).toBe("github");
     expect(detectGitHost("https://gitlab.com/acoyfellow/mcpu.git")).toBe("gitlab");
@@ -102,5 +121,22 @@ describe("mcpu", () => {
       worker.fetch(new Request("https://mcpu.test/read?path=README.md"), leaked).then((r) => r.text()),
     ]);
     expect(pages.join("")).not.toContain(planted);
+  });
+
+  it("grant 403 on README.md vs allow docs/**", async () => {
+    const e = env();
+    const grant: any = await handleTool(e, "grant.create", {
+      verbs: ["write", "read"],
+      allow: ["docs/**"],
+    });
+    await expect(
+      handleTool(e, "repo.write", { grant: grant.id, path: "docs/note.md", contents: "ok" }),
+    ).resolves.toEqual({ ok: true, path: "docs/note.md" });
+    await expect(
+      handleTool(e, "repo.write", { grant: grant.id, path: "README.md", contents: "no" }),
+    ).rejects.toBeInstanceOf(GrantDenied);
+    await expect(
+      handleTool(e, "repo.write", { grant: grant.id, path: "README.md", contents: "no" }),
+    ).rejects.toThrow(/403 README.md/);
   });
 });
