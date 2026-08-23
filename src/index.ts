@@ -1,11 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createTwoFilesPatch } from "diff";
-import { artifactConfig, createArtifactCommit, readArtifactsHead, type ArtifactCommit } from "./artifacts";
+import { artifactConfig, createArtifactCommit, detectGitHost, readArtifactsHead, type ArtifactCommit } from "./artifacts";
 import { deployArtifactCommit } from "./deploy";
+import { faceHtml } from "./face";
 
 export interface Env {
   MCPU_PACK?: string;
+  GIT_REMOTE?: string;
+  GIT_TOKEN?: string;
+  GIT_BRANCH?: string;
   ARTIFACTS_REMOTE?: string;
   ARTIFACTS_TOKEN?: string;
   ARTIFACTS_BRANCH?: string;
@@ -19,8 +23,8 @@ type Files = Record<string, string>;
 type Rpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
 const seed: Files = {
-  "README.md": `# mcpu\n\nTiny, smol, permanent 0.0.1.\n\nGitHub is bootstrap only. After first deploy, mcpu lives in Cloudflare Artifacts and redeploys itself on Cloudflare.\n`,
-  "AGENTS.md": `# Agent instructions\n\nKeep mcpu tiny. Version stays 0.0.1 forever.\n\nUse MCP tools to edit, diff, commit an Artifact, and deploy that Artifact.\n`,
+  "README.md": `# mcpu\n\nTiny, smol, permanent 0.0.1.\n\nInstall mcpu. Point GIT_REMOTE at GitHub, GitLab, or Artifacts. The agent talks to /mcp.\n`,
+  "AGENTS.md": `# Agent instructions\n\nKeep mcpu tiny. Version stays 0.0.1 forever.\n\nUse MCP tools to edit, diff, commit, and deploy. The git host is a peer.\n`,
   "worker.js": `export default {\n  fetch() {\n    return new Response("mcpu 0.0.1 - artifact-native\\n", { headers: { "content-type": "text/plain; charset=utf-8" } });\n  }\n};\n`,
 };
 
@@ -33,8 +37,12 @@ export function rememberCommit(commit: ArtifactCommit | null) {
 }
 const toolNames = ["repo.status", "repo.ls", "repo.read", "repo.write", "repo.diff", "repo.commit", "repo.deploy", "repo.history"];
 
+function hasRemote(env: Env) {
+  return Boolean((env.GIT_REMOTE ?? env.ARTIFACTS_REMOTE) && (env.GIT_TOKEN ?? env.ARTIFACTS_TOKEN));
+}
+
 async function head(env: Env) {
-  if (!env.ARTIFACTS_REMOTE || !env.ARTIFACTS_TOKEN) return lastCommit;
+  if (!hasRemote(env)) return lastCommit;
   return (await readArtifactsHead(artifactConfig(env))) ?? lastCommit;
 }
 
@@ -63,7 +71,10 @@ function diffFiles(base: Files, next: Files) {
 export async function handleTool(env: Env, name: string, args: any) {
   const current = await head(env);
   const files = await getFiles(env);
-  if (name === "repo.status") return { pack: env.MCPU_PACK ?? "mcpu", version: "0.0.1", storage: "cloudflare-artifacts", bootstrap: "github-only", draftDirty: draft !== null, currentArtifact: current?.id ?? null, deployedArtifact };
+  if (name === "repo.status") {
+    const remote = env.GIT_REMOTE ?? env.ARTIFACTS_REMOTE ?? null;
+    return { pack: env.MCPU_PACK ?? "mcpu", version: "0.0.1", storage: remote ? detectGitHost(remote) : "none", remote, draftDirty: draft !== null, currentArtifact: current?.id ?? null, deployedArtifact };
+  }
   if (name === "repo.ls") return { files: Object.keys(files).sort() };
   if (name === "repo.read") {
     if (!args?.path || !(args.path in files)) throw new Error("file not found");
@@ -123,8 +134,15 @@ async function handleMcp(request: Request, env: Env) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/") return new Response("mcpu 0.0.1 - artifact-native repo over MCP\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
-    if (url.pathname === "/files") return json(await getFiles(env));
+    if (url.pathname === "/") return new Response(faceHtml(), { headers: { "content-type": "text/html; charset=utf-8" } });
+    if (url.pathname === "/ls") return json(await handleTool(env, "repo.ls", {}));
+    if (url.pathname === "/read") {
+      try {
+        return json(await handleTool(env, "repo.read", { path: url.searchParams.get("path") }));
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 404);
+      }
+    }
     if (url.pathname === "/mcp" && request.method === "POST") return handleMcp(request, env);
     return new Response("not found", { status: 404 });
   },

@@ -16,10 +16,36 @@ export type ArtifactConfig = {
   branch?: string;
 };
 
-export function artifactConfig(env: { ARTIFACTS_REMOTE?: string; ARTIFACTS_TOKEN?: string; ARTIFACTS_BRANCH?: string }): ArtifactConfig {
-  if (!env.ARTIFACTS_REMOTE) throw new Error("ARTIFACTS_REMOTE is required");
-  if (!env.ARTIFACTS_TOKEN) throw new Error("ARTIFACTS_TOKEN is required");
-  return { remote: env.ARTIFACTS_REMOTE, token: env.ARTIFACTS_TOKEN, branch: env.ARTIFACTS_BRANCH ?? "main" };
+export type GitHost = "github" | "gitlab" | "artifacts" | "other";
+
+export function detectGitHost(remote: string): GitHost {
+  const host = remote.toLowerCase();
+  if (host.includes("artifacts.cloudflare.net")) return "artifacts";
+  if (host.includes("github.com") || host.includes("github.")) return "github";
+  if (host.includes("gitlab.") || host.includes("gitlab.com")) return "gitlab";
+  return "other";
+}
+
+export function gitAuth(remote: string, token: string): { username: string; password: string } {
+  const host = detectGitHost(remote);
+  if (host === "artifacts") return { username: "x-token", password: token };
+  if (host === "gitlab") return { username: "oauth2", password: token };
+  return { username: "x-access-token", password: token };
+}
+
+export function artifactConfig(env: {
+  GIT_REMOTE?: string;
+  GIT_TOKEN?: string;
+  GIT_BRANCH?: string;
+  ARTIFACTS_REMOTE?: string;
+  ARTIFACTS_TOKEN?: string;
+  ARTIFACTS_BRANCH?: string;
+}): ArtifactConfig {
+  const remote = env.GIT_REMOTE ?? env.ARTIFACTS_REMOTE;
+  const token = env.GIT_TOKEN ?? env.ARTIFACTS_TOKEN;
+  if (!remote) throw new Error("GIT_REMOTE or ARTIFACTS_REMOTE is required");
+  if (!token) throw new Error("GIT_TOKEN or ARTIFACTS_TOKEN is required");
+  return { remote, token, branch: env.GIT_BRANCH ?? env.ARTIFACTS_BRANCH ?? "main" };
 }
 
 type Workspace = { fs: any; dir: string; cleanup: () => Promise<void> };
@@ -55,7 +81,7 @@ export async function readArtifactsHead(cfg: ArtifactConfig): Promise<ArtifactCo
   try {
     await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
     try {
-      await git.clone({ fs, http, dir, url: cfg.remote, singleBranch: true, depth: 1, ref: cfg.branch ?? "main", onAuth: () => ({ username: "x-token", password: cfg.token }) });
+      await git.clone({ fs, http, dir, url: cfg.remote, singleBranch: true, depth: 1, ref: cfg.branch ?? "main", onAuth: () => gitAuth(cfg.remote, cfg.token) });
     } catch {
       return null;
     }
@@ -84,7 +110,7 @@ export async function createArtifactCommit(cfg: ArtifactConfig, message: string,
     await fs.mkdir(dir, { recursive: true }).catch(() => undefined);
     let parent: string | null = null;
     try {
-      await git.clone({ fs, http, dir, url: cfg.remote, singleBranch: true, depth: 1, ref: cfg.branch ?? "main", onAuth: () => ({ username: "x-token", password: cfg.token }) });
+      await git.clone({ fs, http, dir, url: cfg.remote, singleBranch: true, depth: 1, ref: cfg.branch ?? "main", onAuth: () => gitAuth(cfg.remote, cfg.token) });
       parent = await git.resolveRef({ fs, dir, ref: "HEAD" });
     } catch {
       await git.init({ fs, dir, defaultBranch: cfg.branch ?? "main" });
@@ -94,7 +120,7 @@ export async function createArtifactCommit(cfg: ArtifactConfig, message: string,
     const canPush = /^https?:\/\//.test(cfg.remote);
     if (canPush) {
       await git.addRemote({ fs, dir, remote: "origin", url: cfg.remote }).catch(() => undefined);
-      await git.push({ fs, http, dir, remote: "origin", ref: cfg.branch ?? "main", onAuth: () => ({ username: "x-token", password: cfg.token }) });
+      await git.push({ fs, http, dir, remote: "origin", ref: cfg.branch ?? "main", onAuth: () => gitAuth(cfg.remote, cfg.token) });
     }
     return { id: sha, parent, message, at: new Date().toISOString(), files, pushed: canPush ? { sha, remote: cfg.remote } : null };
   } finally {
