@@ -1,142 +1,50 @@
 # mcpu
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Facoyfellow%2Fmcpu)
+Give an agent a git remote. Do not give it a shell.
 
-`mcpu` is an MCP control surface for a Cloudflare Artifacts repo. GitHub is only the bootstrap seed. After first deploy, source commits live in Cloudflare Artifacts and deploy back to Cloudflare Workers.
+This Worker lists files, shows one file, accepts MCP tool calls, holds a draft in memory, can commit that draft, and can deploy `worker.js` only when an imprint release is verified.
 
-## Start here
+Version stays `0.0.1`.
 
-### 1. Deploy to your Cloudflare account
+## What you can do now
 
-Click **Deploy to Cloudflare** above and finish the deploy flow.
+Open the Worker origin.
 
-When it completes, copy your Worker URL. It will look like:
+- `GET /` — HTML. File names on the left. One file on the right. No terminal.
+- `GET /ls` — `{ "files": [...] }`.
+- `GET /read?path=README.md` — `{ "path", "contents" }`.
+- `POST /mcp` — `initialize`, `tools/list`, `tools/call`.
 
-```txt
-https://mcpu.<your-subdomain>.workers.dev
-```
+Tools: `repo.status`, `repo.ls`, `repo.read`, `repo.write`, `repo.diff`, `repo.commit`, `repo.deploy`, `repo.history`, `grant.create`.
 
-If you deploy with `workers_dev = false`, use the route or custom domain you configured instead.
+With no remote, the tree is `AGENTS.md`, `README.md`, `worker.js`.
 
-### 2. Protect `/mcp`
+`repo.write` dirties a process draft. `repo.commit` builds a git commit on an in-memory workspace. A `file://` remote does not push. `repo.deploy` refuses unless `.imprint/releases/<sha>.json` has `proof.verified: true`. Without Cloudflare upload secrets it returns `uploaded: false`.
 
-Before adding deploy-capable secrets, protect `/mcp` with Cloudflare Access or an equivalent auth layer. Do not expose a public MCP endpoint with `ARTIFACTS_TOKEN` or `CLOUDFLARE_API_TOKEN` configured.
+`grant.create` stores verbs and paths. A later call that sends `grant` may write `docs/**` and gets `403` on `README.md`. A call with no grant is not checked.
 
-### 3. Add secrets for the Artifact loop
+## What this is not
 
-`mcpu` needs an Artifacts Git remote and token before `repo.commit` can push source to Cloudflare Artifacts.
+- There is no Access check in this Worker.
+- There is no `doctor`, no `/health`, no `mcpu-bridge` in this repo.
+- There is no open/close session and no Durable Object draft.
+- The agent can still push if you point it at an `https` remote. Default branch is not protected here.
+- Write and deploy are not separate secrets.
+- The face does not write, commit, or send a grant.
+- `src/mcp.ts` (stdio) is local only. It is not in git.
 
-Set these Worker secrets/vars in your account:
-
-```txt
-ARTIFACTS_REMOTE=https://<account-id>.artifacts.cloudflare.net/git/default/mcpu.git
-ARTIFACTS_TOKEN=art_v1_...
-ARTIFACTS_BRANCH=main
-MCPU_SCRIPT_NAME=mcpu
-CLOUDFLARE_ACCOUNT_ID=<account-id>
-CLOUDFLARE_API_TOKEN=<token that can edit Workers>
-IMPRINT_DIR=<checkout that holds .imprint/releases>
-```
-
-`repo.deploy` reads `IMPRINT_DIR/.imprint/releases/<commit>.json` and refuses unless `proof.verified` is true. Missing file or `verified: false` is a failed deploy. GitHub is not used after bootstrap.
-
-### 4. Add mcpu to your MCP config
-
-Use your deployed Worker URL plus `/mcp`.
-
-```json
-{
-  "mcpServers": {
-    "mcpu": {
-      "url": "https://mcpu.<your-subdomain>.workers.dev/mcp"
-    }
-  }
-}
-```
-
-For a custom domain:
-
-```json
-{
-  "mcpServers": {
-    "mcpu": {
-      "url": "https://mcpu.example.com/mcp"
-    }
-  }
-}
-```
-
-### 5. Try it
-
-Ask your agent:
-
-```txt
-Connect to mcpu. Run repo.status, list files, read worker.js, change the homepage text, show the diff, commit it, and deploy it.
-```
-
-Expected loop:
-
-```txt
-repo.write, repo.diff, repo.commit (Artifacts),
-then repo.deploy only if .imprint/releases/<commit>.json has proof.verified true
-```
-
-## Local development
-
-Run the seed locally:
+## Run
 
 ```sh
-npm install
-npm test
-npm run dev -- --port 8799
+bun test
+bun scripts/face-proof.mjs
+npx tsc --noEmit
 ```
 
-Then connect to:
+`face-proof.mjs` plants `GIT_TOKEN=leak-me` and fails if that string appears in `/`, `/ls`, or `/read`.
 
-```txt
-http://localhost:8799/mcp
-```
+## Bindings
 
-Local MCP config:
+`wrangler.jsonc` binds Durable Object class `GrantDO` as `GRANT` (sqlite migration `v1-grant`). Tests inject a store. They do not call `env.GRANT`.
 
-```json
-{
-  "mcpServers": {
-    "mcpu-local": {
-      "url": "http://localhost:8799/mcp"
-    }
-  }
-}
-```
-
-## Reference
-
-Tools:
-
-- `repo.status`
-- `repo.ls`
-- `repo.read`
-- `repo.write`
-- `repo.diff`
-- `repo.commit`
-- `repo.deploy`
-- `repo.history`
-
-State:
-
-- `draft` - mutable working tree
-- `artifact` - immutable source commit in Cloudflare Artifacts
-- `deployment` - Worker version deployed from an Artifact
-
-## Explanation
-
-GitHub gets you to zero. Cloudflare owns everything after.
-
-`repo.commit` writes a git commit and pushes it to Artifacts. In a Worker it
-uses an in-memory filesystem. In Node it uses a temp directory. It does not
-need a browser.
-
-`rememberCommit` exists only for tests. Do not use it in production.
-
-Deploy still requires `IMPRINT_DIR` and a verified release for that commit.
-
+Set `GIT_REMOTE` / `GIT_TOKEN` (or the older `ARTIFACTS_*` names) when you want a real remote. Set `IMPRINT_DIR` before `repo.deploy`.
